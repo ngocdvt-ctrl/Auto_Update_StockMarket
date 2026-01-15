@@ -3,9 +3,7 @@
 
 本プロジェクトは、VNDirect（ベトナム証券会社） の株式情報サイトから
 VNIndex（HOSE）関連データを自動取得し、Excel ファイルへ安全に蓄積する Python スクリプトです。
-![実行ログ](images/run_log.png)
-![Excel 出力](images/excel_result.png)
-![VNDirect](images/vndirect_page.png)
+![Process](images/process.png)
 
 Selenium を用いた実運用レベルの Web スクレイピングに加え、
 重複データ防止・取引日判定・Excel 追記処理など、
