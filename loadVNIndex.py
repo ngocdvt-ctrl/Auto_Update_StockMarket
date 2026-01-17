@@ -1,4 +1,3 @@
-import time
 import os
 import re
 from datetime import datetime, timedelta
@@ -15,8 +14,8 @@ from selenium.webdriver.support import expected_conditions as EC
 
 
 # =========================================================================
-# 0. PATH / BASE DIR (QUAN TRỌNG)
-#    => Ép Excel luôn nằm "cùng folder với loadVNIndex.py"
+# 0. PATH / BASE DIR
+#    => Excel を必ず loadVNIndex.py と同じフォルダに保存
 # =========================================================================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -27,13 +26,18 @@ EXCEL_FILE_PATH = os.path.join(BASE_DIR, EXCEL_FILE_NAME)
 
 TIMEOUT = 20
 
-# ĐƯỜNG DẪN USER PROFILE: Thay thế bằng đường dẫn thư mục profile Chrome của bạn
+# Chrome ユーザープロファイル（必要に応じて変更）
 USER_DATA_DIR = r"C:\Users\A22M\Programming\Python\Chrome VPS Profile"
+
+
+# =========================================================================
+# 1. 取得する要素（XPATH）
+# =========================================================================
 
 XPATH_SELECTORS = {
     "VNIndex": '//*[@id="charts-wrapper"]/div/div/div[1]/div[2]/p[1]/span[3]',
-    "Spread_Icon": '//*[@id="charts-wrapper"]/div/div/div[1]/div[2]/p[1]/span[2]',  # icon tăng/giảm
-    "Spread": '//*[@id="charts-wrapper"]/div/div/div[1]/div[2]/p[1]/span[4]',       # cả Spread và Spread%
+    "Spread_Icon": '//*[@id="charts-wrapper"]/div/div/div[1]/div[2]/p[1]/span[2]',  # 上下矢印アイコン
+    "Spread": '//*[@id="charts-wrapper"]/div/div/div[1]/div[2]/p[1]/span[4]',       # Spread と Spread% が入る
     "Value": '//*[@id="charts-wrapper"]/div/div/div[1]/div[2]/p[2]/span[3]',
     "Volume": '//*[@id="charts-wrapper"]/div/div/div[1]/div[2]/p[2]/span[1]',
     "CP_Tang": '//*[@id="charts-wrapper"]/div/div/div[1]/div[2]/p[3]/span[2]',
@@ -41,7 +45,24 @@ XPATH_SELECTORS = {
     "CP_KhongDoi": '//*[@id="charts-wrapper"]/div/div/div[1]/div[2]/p[3]/span[5]',
 }
 
-FINAL_COLUMN_ORDER = [
+# =========================================================================
+# 2. カラム名（日本語）定義
+# =========================================================================
+
+# 内部キー（英語） -> Excel出力用（日本語）
+COLUMN_JP = {
+    "ThoiGian": "取引日",
+    "VNIndex": "VN指数",
+    "Spread": "前日比(ポイント)",
+    "Spread%": "前日比(%)",
+    "Value": "売買代金",
+    "Volume": "出来高",
+    "CP_Tang": "上昇銘柄数",
+    "CP_Giam": "下落銘柄数",
+    "CP_KhongDoi": "変わらず銘柄数",
+}
+
+FINAL_COLUMN_ORDER_INTERNAL = [
     "ThoiGian",
     "VNIndex",
     "Spread",
@@ -53,22 +74,34 @@ FINAL_COLUMN_ORDER = [
     "CP_KhongDoi",
 ]
 
-# Các cột dùng để so sánh (Loại bỏ 'ThoiGian')
-COMPARE_COLUMNS = [col for col in FINAL_COLUMN_ORDER if col != "ThoiGian"]
+FINAL_COLUMN_ORDER_JP = [COLUMN_JP[c] for c in FINAL_COLUMN_ORDER_INTERNAL]
 
-# Ép kiểu tất cả các cột so sánh thành chuỗi (str) khi đọc Excel để tránh lỗi kiểu hỗn hợp
-DTYPE_CONVERTERS = {col: str for col in COMPARE_COLUMNS}
+# 比較用（取引日は除外）
+COMPARE_COLUMNS_INTERNAL = [c for c in FINAL_COLUMN_ORDER_INTERNAL if c != "ThoiGian"]
+COMPARE_COLUMNS_JP = [COLUMN_JP[c] for c in COMPARE_COLUMNS_INTERNAL]
+
+# Excel を読むときは比較カラムを全部 str に
+DTYPE_CONVERTERS_JP = {col: str for col in COMPARE_COLUMNS_JP}
+
+# ログ表示用（内部キー -> 日本語ラベル）
+LOG_LABEL = {
+    "VNIndex": "VN指数",
+    "Spread": "前日比",
+    "Spread%": "前日比(%)",
+    "Value": "売買代金",
+    "Volume": "出来高",
+    "CP_Tang": "上昇銘柄数",
+    "CP_Giam": "下落銘柄数",
+    "CP_KhongDoi": "変わらず銘柄数",
+}
 
 
 # =========================================================================
-# 1. HÀM HỖ TRỢ: NGÀY GIAO DỊCH + CHUẨN HÓA + ĐỌC DÒNG CUỐI EXCEL
+# 3. 補助関数：取引日判定、正規化、Excel最後行取得
 # =========================================================================
 
 def get_trading_date() -> str:
-    """Xác định ngày giao dịch dựa trên thời gian hiện tại (trước/sau 9:00 sáng).
-    - Trước 9:00 hoặc T7/CN => lùi về ngày gần nhất T2-T6.
-    - Sau 9:00 và T2-T6 => dùng ngày hiện tại.
-    """
+    """現在時刻に基づいて取引日を判定する（9:00 前 / 土日なら直近営業日）。"""
     now = datetime.now()
     opening_time = now.replace(hour=9, minute=0, second=0, microsecond=0)
     weekday = now.weekday()  # 0=Mon ... 6=Sun
@@ -84,11 +117,10 @@ def get_trading_date() -> str:
 
 
 def normalize_value_for_comparison(value) -> str:
-    """Chuyển đổi giá trị sang định dạng chuỗi chuẩn để so sánh."""
+    """比較用に値を文字列へ正規化。"""
     if value is None:
         return "N/A"
 
-    # NaN
     if isinstance(value, (float, np.number)) and np.isnan(value):
         return "N/A"
 
@@ -109,15 +141,15 @@ def normalize_value_for_comparison(value) -> str:
 
 
 def get_last_excel_data():
-    """Đọc và trả về dữ liệu của dòng cuối cùng trong file Excel (ĐÃ CHUẨN HÓA)."""
+    """Excel の最終行（比較対象カラムのみ）を読み、正規化して返す。"""
     if not os.path.isfile(EXCEL_FILE_PATH):
         return None
 
     try:
         df = pd.read_excel(
             EXCEL_FILE_PATH,
-            usecols=COMPARE_COLUMNS,
-            dtype=DTYPE_CONVERTERS
+            usecols=COMPARE_COLUMNS_JP,
+            dtype=DTYPE_CONVERTERS_JP
         )
 
         if df.empty:
@@ -126,27 +158,27 @@ def get_last_excel_data():
         last_row = df.iloc[-1].to_dict()
         normalized = {}
 
-        for col in COMPARE_COLUMNS:
+        for col in COMPARE_COLUMNS_JP:
             normalized[col] = normalize_value_for_comparison(last_row.get(col))
 
         return normalized
 
     except Exception as e:
-        print(f"⚠️ Lỗi khi đọc/chuẩn hóa Excel: {e}. Bỏ qua kiểm tra trùng lặp.")
+        print(f"⚠️ Excel 読み込み/正規化でエラー: {e}。重複チェックをスキップします。")
         return None
 
 
 # =========================================================================
-# 2. HÀM CHÍNH: QUÉT DATA + CHECK TRÙNG + GHI EXCEL
+# 4. メイン処理：取得 + 重複チェック + Excel追記
 # =========================================================================
 
 def get_market_data_and_save():
-    # LOG để anh biết chắc chắn đang ghi file vào đâu
-    print("📌 Current Working Directory (CWD):", os.getcwd())
-    print("📌 Script folder (BASE_DIR):       ", BASE_DIR)
-    print("📌 Excel path (EXCEL_FILE_PATH):   ", EXCEL_FILE_PATH)
+    # ログ：保存先の確認
+    print("📌 実行ディレクトリ(CWD):", os.getcwd())
+    print("📌 スクリプトのフォルダ:", BASE_DIR)
+    print("📌 Excel 保存パス:", EXCEL_FILE_PATH)
 
-    print("\n🚀 Đang khởi động trình duyệt ảo...")
+    print("\n🚀 ブラウザを起動中...")
     chrome_options = Options()
     chrome_options.add_argument(f"user-data-dir={USER_DATA_DIR}")
     chrome_options.add_argument("--window-size=1920,1080")
@@ -155,39 +187,39 @@ def get_market_data_and_save():
     try:
         driver = webdriver.Chrome(options=chrome_options)
     except Exception as e:
-        print(f"❌ Lỗi khởi tạo WebDriver: {e}")
+        print(f"❌ WebDriver 初期化エラー: {e}")
         return
 
-    # default row
-    data_row = {key: "N/A" for key in COMPARE_COLUMNS}
+    # 取得データ（内部キー）
+    data_row_internal = {key: "N/A" for key in COMPARE_COLUMNS_INTERNAL}
     is_spread_negative = False
 
     try:
-        print(f"🌐 Truy cập website: {VNDIRECT_URL}")
+        print(f"🌐 サイトへアクセス: {VNDIRECT_URL}")
         driver.get(VNDIRECT_URL)
 
         WebDriverWait(driver, TIMEOUT).until(
             EC.presence_of_element_located((By.XPATH, XPATH_SELECTORS["VNIndex"]))
         )
-        print("✅ VNIndex đã sẵn sàng.")
+        print("✅ VN指数の要素を検出しました。")
 
-        # --- BƯỚC 1: XÁC ĐỊNH XU HƯỚNG SPREAD (DỰA TRÊN ICON) ---
+        # --- 1) Spread の増減方向をアイコンで判定 ---
         try:
             icon_element = driver.find_element(By.XPATH, XPATH_SELECTORS["Spread_Icon"])
             icon_class = (icon_element.get_attribute("class") or "").lower()
 
             if "icon-arrowdown" in icon_class:
                 is_spread_negative = True
-                print("⬇️ Xu hướng Spread: GIẢM (sẽ thêm dấu âm '-').")
+                print("⬇️ 前日比: 下落（マイナスを付与）")
             else:
                 is_spread_negative = False
-                print("⬆️ Xu hướng Spread: TĂNG/KHÔNG ĐỔI (giữ nguyên).")
+                print("⬆️ 前日比: 上昇/変わらず")
 
         except Exception as e:
             msg = str(e).split("\n")[0].replace("Message: ", "")
-            print(f"⚠️ Cảnh báo: Không tìm thấy icon Spread ({msg}). Mặc định Spread TĂNG.")
+            print(f"⚠️ 前日比アイコン未検出 ({msg})。デフォルトは上昇扱い。")
 
-        # --- BƯỚC 2: LẤY DỮ LIỆU ---
+        # --- 2) データ取得 ---
         for name, selector in XPATH_SELECTORS.items():
             if name == "Spread_Icon":
                 continue
@@ -196,12 +228,11 @@ def get_market_data_and_save():
                 element = driver.find_element(By.XPATH, selector)
                 value = (element.text or "").strip()
 
-                # ===== Spread + Spread% =====
+                # Spread / Spread%
                 if name == "Spread":
                     raw_spread = "N/A"
                     raw_spread_percent = "N/A"
 
-                    # dạng "1.23 0.45%" hoặc tương tự
                     match = re.search(r"([\d\.\,\-]+)\s+([\d\.\,\-]+%)", value)
                     if match:
                         raw_spread = match.group(1).strip().replace(",", "")
@@ -213,25 +244,24 @@ def get_market_data_and_save():
                             raw_spread_percent = parts[1].strip().replace("%", "")
 
                     if is_spread_negative:
-                        # thêm dấu âm nếu chưa có
                         if raw_spread != "N/A" and not raw_spread.startswith("-"):
-                            data_row["Spread"] = "-" + raw_spread
+                            data_row_internal["Spread"] = "-" + raw_spread
                         else:
-                            data_row["Spread"] = raw_spread
+                            data_row_internal["Spread"] = raw_spread
 
                         if raw_spread_percent != "N/A" and not raw_spread_percent.startswith("-"):
-                            data_row["Spread%"] = "-" + raw_spread_percent
+                            data_row_internal["Spread%"] = "-" + raw_spread_percent
                         else:
-                            data_row["Spread%"] = raw_spread_percent
+                            data_row_internal["Spread%"] = raw_spread_percent
                     else:
-                        data_row["Spread"] = raw_spread
-                        data_row["Spread%"] = raw_spread_percent
+                        data_row_internal["Spread"] = raw_spread
+                        data_row_internal["Spread%"] = raw_spread_percent
 
-                    print(f"   -> Spread (điểm): {data_row['Spread']}")
-                    print(f"   -> Spread% (chỉ số): {data_row['Spread%']}")
+                    print(f"   -> 前日比(ポイント): {data_row_internal['Spread']}")
+                    print(f"   -> 前日比(%): {data_row_internal['Spread%']}")
                     continue
 
-                # ===== Value: bỏ 'tỷ' + format 3 chữ số thập phân =====
+                # Value（'tỷ' 除去 + 小数3桁整形）
                 if name == "Value":
                     temp = value.replace(" tỷ", "").strip()
                     temp = temp.replace(",", "")
@@ -246,90 +276,118 @@ def get_market_data_and_save():
                     else:
                         value = "N/A"
 
-                # các field còn lại
-                data_row[name] = value if value else "N/A"
+                # その他
+                data_row_internal[name] = value if value else "N/A"
 
+                # ログ（日本語ラベル）
                 if name != "Spread":
-                    print(f"   -> {name}: {data_row[name]}")
+                    label = LOG_LABEL.get(name, name)
+                    print(f"   -> {label}: {data_row_internal[name]}")
 
             except Exception as e:
                 msg = str(e).split("\n")[0].replace("Message: ", "")
-                print(f"❌ Lỗi: Không tìm thấy phần tử {name} | Chi tiết: {msg}")
-                data_row[name] = "N/A"
+                label = LOG_LABEL.get(name, name)
+                print(f"❌ 要素未検出: {label} | 詳細: {msg}")
+                data_row_internal[name] = "N/A"
                 if name == "Spread":
-                    data_row["Spread%"] = "N/A"
+                    data_row_internal["Spread%"] = "N/A"
 
-        # --- BƯỚC 3: CHECK TRÙNG LẶP ---
+        # --- 3) 重複チェック（Excel の日本語カラムで比較）---
         last_data_normalized = get_last_excel_data()
-        current_data_normalized = {
-            col: normalize_value_for_comparison(data_row.get(col))
-            for col in COMPARE_COLUMNS
-        }
+
+        # 現在データ（比較用）を “日本語カラム名” に変換して正規化
+        current_data_jp = {}
+        for internal_key in COMPARE_COLUMNS_INTERNAL:
+            jp_col = COLUMN_JP[internal_key]
+            current_data_jp[jp_col] = normalize_value_for_comparison(data_row_internal.get(internal_key))
 
         is_duplicate = False
         if last_data_normalized:
             is_duplicate = all(
-                current_data_normalized.get(col) == last_data_normalized.get(col)
-                for col in COMPARE_COLUMNS
+                current_data_jp.get(col) == last_data_normalized.get(col)
+                for col in COMPARE_COLUMNS_JP
             )
 
         if is_duplicate:
             print("\n=======================================================")
-            print("🚫 Dữ liệu hiện tại GIỐNG HỆT dữ liệu cuối cùng trong Excel.")
-            print("➡️ **Dữ liệu đã có là dữ liệu mới nhất** (Phiên giao dịch có thể đã kết thúc).")
+            print("🚫 現在データは Excel の最終行と同一です。")
+            print("➡️ 既に最新データが保存されています（取引終了の可能性あり）。")
             print("=======================================================\n")
             return
 
         print("\n=======================================================")
-        print("✅ Dữ liệu mới vừa được thu thập!")
-        print("➡️ **Dữ liệu thu thập được lần này là dữ liệu mới nhất**.")
+        print("✅ 新しいデータを取得しました！")
+        print("➡️ 今回取得したデータを Excel に追記します。")
         print("=======================================================\n")
 
-        # --- BƯỚC 4: GHI EXCEL ---
-        data_row["ThoiGian"] = get_trading_date()
-        df = pd.DataFrame([data_row])[FINAL_COLUMN_ORDER]
+        # --- 4) Excel へ保存（日本語ヘッダー）---
+        trading_date = get_trading_date()
 
-        print(f"💾 Ghi dữ liệu vào: {EXCEL_FILE_PATH}")
+        # 内部データ -> 日本語カラムへ変換
+        data_row_jp = {
+            COLUMN_JP["ThoiGian"]: trading_date,
+            COLUMN_JP["VNIndex"]: data_row_internal.get("VNIndex", "N/A"),
+            COLUMN_JP["Spread"]: data_row_internal.get("Spread", "N/A"),
+            COLUMN_JP["Spread%"]: data_row_internal.get("Spread%", "N/A"),
+            COLUMN_JP["Value"]: data_row_internal.get("Value", "N/A"),
+            COLUMN_JP["Volume"]: data_row_internal.get("Volume", "N/A"),
+            COLUMN_JP["CP_Tang"]: data_row_internal.get("CP_Tang", "N/A"),
+            COLUMN_JP["CP_Giam"]: data_row_internal.get("CP_Giam", "N/A"),
+            COLUMN_JP["CP_KhongDoi"]: data_row_internal.get("CP_KhongDoi", "N/A"),
+        }
+
+        df_out = pd.DataFrame([data_row_jp])[FINAL_COLUMN_ORDER_JP]
+
+        print(f"💾 Excel に保存: {EXCEL_FILE_PATH}")
         file_exists = os.path.isfile(EXCEL_FILE_PATH)
 
         if file_exists:
             try:
-                # append vào sheet đang active
+                # 既存ファイルの最初のシートへ追記
                 book = load_workbook(EXCEL_FILE_PATH)
+                sheet = book.active
+
+                # 既存ヘッダー確認（日本語じゃなければ作り直し）
+                existing_header = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
+                if existing_header != FINAL_COLUMN_ORDER_JP:
+                    raise ValueError("既存Excelのヘッダーが日本語カラムと一致しません（作り直しを実行）。")
+
                 with pd.ExcelWriter(
                     EXCEL_FILE_PATH,
                     engine="openpyxl",
                     mode="a",
                     if_sheet_exists="overlay"
                 ) as writer:
-                    sheet = writer.book.active
-                    start_row = sheet.max_row
-                    df.to_excel(
+                    sheet2 = writer.book.active
+                    start_row = sheet2.max_row
+                    df_out.to_excel(
                         writer,
-                        sheet_name=sheet.title,
+                        sheet_name=sheet2.title,
                         startrow=start_row,
                         index=False,
                         header=False
                     )
-            except Exception as e:
-                print(f"⚠️ Lỗi khi nối thêm dữ liệu ({e}), sẽ ghi đè file.")
-                df.to_excel(EXCEL_FILE_PATH, index=False, header=True, engine="openpyxl")
-        else:
-            df.to_excel(EXCEL_FILE_PATH, index=False, header=True, engine="openpyxl")
 
-        print("🎉 Hoàn tất ghi file!")
+            except Exception as e:
+                print(f"⚠️ 追記に失敗: {e}")
+                print("➡️ 日本語カラムで新規作成（上書き）します。")
+                df_out.to_excel(EXCEL_FILE_PATH, index=False, header=True, engine="openpyxl")
+        else:
+            df_out.to_excel(EXCEL_FILE_PATH, index=False, header=True, engine="openpyxl")
+
+        print("🎉 保存完了！")
 
     except Exception as e:
-        print(f"❌ Lỗi khi quét dữ liệu tổng thể: {e}")
+        print(f"❌ 全体処理エラー: {e}")
 
     finally:
         if driver:
             driver.quit()
-            print("🔒 Đóng trình duyệt.")
+            print("🔒 ブラウザを終了しました。")
 
 
 # =========================================================================
-# 3. MAIN
+# MAIN
 # =========================================================================
 
 if __name__ == "__main__":
