@@ -16,7 +16,7 @@ pandas / openpyxl
 正規表現（re）
 Windows / Task Scheduler 対応設計
 
-**✨ 本コードの特徴・強み**
+**✨ 本コードの特徴・強み**<br>
 1️⃣ スクリプトと同一フォルダへの安全な Excel 保存
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXCEL_FILE_PATH = os.path.join(BASE_DIR, "VNDirect_data.xlsx")
