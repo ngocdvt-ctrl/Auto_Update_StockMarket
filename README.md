@@ -89,8 +89,3 @@ Excel / Power BI / BI ツール連携
 自動スケジューリング（Task Scheduler / cron）
 DB 保存（PostgreSQL / SQLite）
 可視化（matplotlib / Power BI）
-
-**👤 作者について**
-Python / Web Automation / Data Processing
-半導体製造業での業務自動化経験を活かした
-実務志向のスクリプト設計
