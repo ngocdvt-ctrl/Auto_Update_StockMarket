@@ -9,13 +9,6 @@ Selenium を用いた実運用レベルの Web スクレイピングに加え、
 重複データ防止・取引日判定・Excel 追記処理など、
 業務用途を想定した堅牢な設計を行っています。
 
-**🔧 主な技術スタック**
-Python 3.13
-Selenium (Chrome WebDriver)
-pandas / openpyxl
-正規表現（re）
-Windows / Task Scheduler 対応設計
-
 **✨ 本コードの特徴・強み**<br>
 1️⃣ スクリプトと同一フォルダへの安全な Excel 保存
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -84,6 +77,11 @@ Excel / Power BI / BI ツール連携
 株式・経済データ分析
 業務用自動データ収集のサンプル実装
 
+**🔧 主な技術スタック**<br>
+Python 3.13<br>
+Selenium (Chrome WebDriver)<br>
+pandas / openpyxl<br>
+Windows / Task Scheduler<br>
 **🚀 今後の拡張案（Future Work）**
 複数指数（HNX / UPCOM）対応
 自動スケジューリング（Task Scheduler / cron）
